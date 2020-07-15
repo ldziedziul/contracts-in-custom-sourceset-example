@@ -1,6 +1,12 @@
+buildscript {
+	ext {
+		springCloudContractVersion = '2.2.3.RELEASE'
+	}
+}
 plugins {
 	id 'org.springframework.boot' version '2.3.1.RELEASE'
 	id 'io.spring.dependency-management' version '1.0.9.RELEASE'
+	id "org.springframework.cloud.contract" version "${springCloudContractVersion}"
 	id 'java'
 }
 
@@ -13,12 +19,52 @@ repositories {
 }
 
 dependencies {
+	annotationProcessor 'org.projectlombok:lombok'
+	compileOnly 'org.projectlombok:lombok'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	testImplementation('org.springframework.boot:spring-boot-starter-test') {
 		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
 	}
+
+	implementation platform("org.springframework.cloud:spring-cloud-contract-dependencies:${springCloudContractVersion}")
+	testImplementation 'org.springframework.cloud:spring-cloud-starter-contract-verifier'
 }
 
-test {
+tasks.withType(Test) {
 	useJUnitPlatform()
 }
+
+configurations {
+	integrationTestImplementation.extendsFrom testImplementation
+	integrationTestRuntime.extendsFrom testRuntime
+	integrationTestCompileOnly.extendsFrom compileOnly
+}
+
+sourceSets {
+	integrationTest {
+		java.srcDirs = ['src/integration-test/java', 'build/generated-integration-test-sources/contracts']
+		resources.srcDir file('src/integration-test/resources')
+		compileClasspath += main.output + test.output
+		runtimeClasspath += main.output + test.output
+	}
+}
+
+task integrationTest(type: Test) {
+	testClassesDirs = sourceSets.integrationTest.output.classesDirs
+	classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
+integrationTest.shouldRunAfter test
+check.dependsOn integrationTest
+
+contracts {
+	testFramework = org.springframework.cloud.contract.verifier.config.TestFramework.JUNIT5
+	baseClassForTests = 'pl.dziedziul.contractsincustomsourceset.ContractTestBase'
+	contractsDslDir = file("${project.rootDir}/src/integration-test/resources/contracts")
+	generatedTestSourcesDir = file("${project.buildDir}/generated-integration-test-sources/contracts")
+}
+
+compileTestJava.doFirst {
+	sourceSets.test.java.srcDirs -= file("${project.buildDir}/generated-integration-test-sources/contracts")
+}
+
